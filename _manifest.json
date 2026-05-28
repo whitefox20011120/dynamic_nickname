@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "version": "2.0.0",
+  "name": "动态群名片",
+  "description": "周期性自动更换群名片后缀",
+  "author": {
+    "name": "白狐",
+    "url": "https://github.com/whitefox20011120"
+  },
+  "license": "MIT",
+  "urls": {
+    "repository": "https://github.com/whitefox20011120/dynamic_nickname"
+  },
+  "host_application": {
+    "min_version": "1.0.0",
+    "max_version": "1.99.99"
+  },
+  "sdk": {
+    "min_version": "2.0.0",
+    "max_version": "2.99.99"
+  },
+  "dependencies": [
+    {
+      "type": "python_package",
+      "name": "aiohttp",
+      "version_spec": ">=3.9.0"
+    }
+  ],
+  "capabilities": [
+    "config.get",
+    "send.text",
+    "llm.generate"
+  ],
+  "i18n": {
+    "default_locale": "zh-CN",
+    "locales_path": "_locales",
+    "supported_locales": [
+      "zh-CN"
+    ]
+  },
+  "id": "you.dynamic-nickname"
+}
