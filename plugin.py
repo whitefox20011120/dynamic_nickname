@@ -1,8 +1,6 @@
-"""动态群名片插件 — WebUI 适配版
-
+"""
+动态群名片插件
 根据 Bot 人设和当前时间，周期性自动更换群名片后缀。
-- 通过 Napcat HTTP API 调用 set_group_card 实现。
-- 日程由本插件自己用 LLM 生成。
 """
 
 from __future__ import annotations
@@ -19,11 +17,7 @@ import aiohttp
 
 from maibot_sdk import Command, Field, MaiBotPlugin, PluginConfigBase
 
-
-# ============================================================
 # 配置模型
-# ============================================================
-
 class PluginSection(PluginConfigBase):
     """插件总开关。"""
 
@@ -234,13 +228,8 @@ class DynamicNicknameConfig(PluginConfigBase):
     settings: SettingsSection = Field(default_factory=SettingsSection)
     schedule: ScheduleSection = Field(default_factory=ScheduleSection)
 
-
-# ============================================================
 # 数据持久化
-# ============================================================
-
 DATA_FILE = os.path.join(os.path.dirname(__file__), "daily_schedule.json")
-
 
 def _load_data() -> dict:
     if not os.path.exists(DATA_FILE):
@@ -259,14 +248,12 @@ def _load_data() -> dict:
     except Exception:
         return {"schedules": [], "last_update_ts": 0}
 
-
 def _save_data(data: dict) -> None:
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
-
 
 def _update_schedule_history(new_item: dict) -> None:
     data = _load_data()
@@ -276,14 +263,12 @@ def _update_schedule_history(new_item: dict) -> None:
     data["schedules"] = schedules[-3:]
     _save_data(data)
 
-
 def _get_latest_schedule(data: dict) -> tuple[str | None, list[str]]:
     schedules = data.get("schedules", [])
     if not schedules:
         return None, []
     latest = schedules[-1]
     return latest.get("date"), latest.get("items", [])
-
 
 def _get_current_activity(items: list[str]) -> str:
     if not items:
@@ -309,11 +294,7 @@ def _get_current_activity(items: list[str]) -> str:
             break
     return activity
 
-
-# ============================================================
 # 主插件类
-# ============================================================
-
 class DynamicNicknamePlugin(MaiBotPlugin):
     """动态群名片插件。"""
 
@@ -323,8 +304,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         super().__init__()
         self._scheduler_task: asyncio.Task | None = None
 
-    # ---------- 生命周期 ----------
-
+    # 生命周期
     async def on_load(self) -> None:
         if not self.config.plugin.enabled:
             self.ctx.logger.info("动态群名片：插件未启用")
@@ -344,8 +324,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
     async def on_config_update(self, scope: str, config_data: dict[str, object], version: str) -> None:
         del scope, config_data, version
 
-    # ---------- LLM 调用封装 ----------
-
+    # LLM 调用封装
     async def _call_llm(self, prompt: str, temperature: float = 1.0, max_tokens: int = 8192) -> tuple[bool, str]:
         model_name = (self.config.settings.model_name or "").strip()
         try:
@@ -365,8 +344,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
             return False, ""
         return True, str(result.get("response", "")).strip()
 
-    # ---------- 日程生成 ----------
-
+    # 日程生成
     async def _generate_daily_schedule(self) -> bool:
         today = datetime.date.today().isoformat()
         bot_name = self.config.bot.nickname or "Bot"
@@ -412,8 +390,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         self.ctx.logger.info(f"动态群名片：日程已更新，共 {len(items)} 项")
         return True
 
-    # ---------- 名片后缀生成 ----------
-
+    # 名片后缀生成
     async def _generate_suffix(self) -> str:
         bot_name = self.config.bot.nickname or "Bot"
         personality = self.config.personality.personality
@@ -448,8 +425,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         cleaned = content.replace('"', "").replace("“", "").replace("”", "").replace("\n", "").strip()
         return cleaned[:12] if len(cleaned) > 12 else cleaned
 
-    # ---------- Napcat 调用 ----------
-
+    # Napcat 调用
     async def _set_group_card(self, group_id: str, user_id: str, card: str) -> tuple[bool, str]:
         url = f"http://{self.config.napcat.address}:{self.config.napcat.port}/set_group_card"
         payload = {"group_id": group_id, "user_id": user_id, "card": card}
@@ -474,8 +450,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         except Exception as e:
             return False, f"请求异常: {e}"
 
-    # ---------- 执行改名 ----------
-
+    # 执行改名
     async def _perform_change(self) -> tuple[bool, str]:
         target_groups = [str(g).strip() for g in self.config.settings.target_group_id if str(g).strip()]
         if not target_groups:
@@ -504,8 +479,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
             return True, f"已更新: {new_card} ({ok_count}/{len(target_groups)})"
         return False, "所有群改名均失败"
 
-    # ---------- 调度循环 ----------
-
+    # 调度循环
     async def _scheduler_loop(self) -> None:
         try:
             min_interval_sec = self.config.schedule.min_interval * 60
@@ -547,8 +521,7 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         except Exception as e:
             self.ctx.logger.error(f"动态群名片：调度循环异常: {e}", exc_info=True)
 
-    # ---------- 手动命令 ----------
-
+    # 手动命令
     @Command(
         "update_nickname",
         description="立即根据人设刷新 Bot 群名片（/改名 或 /update_card）",
