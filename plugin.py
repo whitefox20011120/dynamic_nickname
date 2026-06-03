@@ -1,6 +1,6 @@
 """
 动态群名片插件
-根据 Bot 人设和当前时间，周期性自动更换群名片后缀。
+根据麦麦人设和当前时间，周期性自动更换群名片后缀。
 """
 
 from __future__ import annotations
@@ -10,14 +10,20 @@ import datetime
 import json
 import os
 import random
+import re
 import time
 from typing import Any, ClassVar
 
 import aiohttp
 
-from maibot_sdk import Command, Field, MaiBotPlugin, PluginConfigBase
+from maibot_sdk import Command, Field, HookHandler, MaiBotPlugin, PluginConfigBase
+from maibot_sdk.types import ErrorPolicy, HookMode, HookOrder
 
+
+# ============================================================
 # 配置模型
+# ============================================================
+
 class PluginSection(PluginConfigBase):
     """插件总开关。"""
 
@@ -228,8 +234,13 @@ class DynamicNicknameConfig(PluginConfigBase):
     settings: SettingsSection = Field(default_factory=SettingsSection)
     schedule: ScheduleSection = Field(default_factory=ScheduleSection)
 
+
+# ============================================================
 # 数据持久化
+# ============================================================
+
 DATA_FILE = os.path.join(os.path.dirname(__file__), "daily_schedule.json")
+
 
 def _load_data() -> dict:
     if not os.path.exists(DATA_FILE):
@@ -248,12 +259,14 @@ def _load_data() -> dict:
     except Exception:
         return {"schedules": [], "last_update_ts": 0}
 
+
 def _save_data(data: dict) -> None:
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
 
 def _update_schedule_history(new_item: dict) -> None:
     data = _load_data()
@@ -263,12 +276,14 @@ def _update_schedule_history(new_item: dict) -> None:
     data["schedules"] = schedules[-3:]
     _save_data(data)
 
+
 def _get_latest_schedule(data: dict) -> tuple[str | None, list[str]]:
     schedules = data.get("schedules", [])
     if not schedules:
         return None, []
     latest = schedules[-1]
     return latest.get("date"), latest.get("items", [])
+
 
 def _get_current_activity(items: list[str]) -> str:
     if not items:
@@ -294,7 +309,11 @@ def _get_current_activity(items: list[str]) -> str:
             break
     return activity
 
+
+# ============================================================
 # 主插件类
+# ============================================================
+
 class DynamicNicknamePlugin(MaiBotPlugin):
     """动态群名片插件。"""
 
@@ -304,7 +323,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         super().__init__()
         self._scheduler_task: asyncio.Task | None = None
 
-    # 生命周期
+    # ---------- 生命周期 ----------
+
     async def on_load(self) -> None:
         if not self.config.plugin.enabled:
             self.ctx.logger.info("动态群名片：插件未启用")
@@ -324,7 +344,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
     async def on_config_update(self, scope: str, config_data: dict[str, object], version: str) -> None:
         del scope, config_data, version
 
-    # LLM 调用封装
+    # ---------- LLM 调用封装 ----------
+
     async def _call_llm(self, prompt: str, temperature: float = 1.0, max_tokens: int = 8192) -> tuple[bool, str]:
         model_name = (self.config.settings.model_name or "").strip()
         try:
@@ -344,7 +365,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
             return False, ""
         return True, str(result.get("response", "")).strip()
 
-    # 日程生成
+    # ---------- 日程生成 ----------
+
     async def _generate_daily_schedule(self) -> bool:
         today = datetime.date.today().isoformat()
         bot_name = self.config.bot.nickname or "Bot"
@@ -390,7 +412,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         self.ctx.logger.info(f"动态群名片：日程已更新，共 {len(items)} 项")
         return True
 
-    # 名片后缀生成
+    # ---------- 名片后缀生成 ----------
+
     async def _generate_suffix(self) -> str:
         bot_name = self.config.bot.nickname or "Bot"
         personality = self.config.personality.personality
@@ -425,7 +448,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         cleaned = content.replace('"', "").replace("“", "").replace("”", "").replace("\n", "").strip()
         return cleaned[:12] if len(cleaned) > 12 else cleaned
 
-    # Napcat 调用
+    # ---------- Napcat 调用 ----------
+
     async def _set_group_card(self, group_id: str, user_id: str, card: str) -> tuple[bool, str]:
         url = f"http://{self.config.napcat.address}:{self.config.napcat.port}/set_group_card"
         payload = {"group_id": group_id, "user_id": user_id, "card": card}
@@ -450,7 +474,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         except Exception as e:
             return False, f"请求异常: {e}"
 
-    # 执行改名
+    # ---------- 执行改名 ----------
+
     async def _perform_change(self) -> tuple[bool, str]:
         target_groups = [str(g).strip() for g in self.config.settings.target_group_id if str(g).strip()]
         if not target_groups:
@@ -479,7 +504,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
             return True, f"已更新: {new_card} ({ok_count}/{len(target_groups)})"
         return False, "所有群改名均失败"
 
-    # 调度循环
+    # ---------- 调度循环 ----------
+
     async def _scheduler_loop(self) -> None:
         try:
             min_interval_sec = self.config.schedule.min_interval * 60
@@ -521,7 +547,8 @@ class DynamicNicknamePlugin(MaiBotPlugin):
         except Exception as e:
             self.ctx.logger.error(f"动态群名片：调度循环异常: {e}", exc_info=True)
 
-    # 手动命令
+    # ---------- 手动命令 ----------
+
     @Command(
         "update_nickname",
         description="立即根据人设刷新 Bot 群名片（/改名 或 /update_card）",
@@ -561,6 +588,89 @@ class DynamicNicknamePlugin(MaiBotPlugin):
             self.ctx.logger.error(f"动态群名片：手动改名异常: {e}", exc_info=True)
             await self.ctx.send.text(f"❌ 异常：{e}", stream_id)
             return False, str(e), True
+
+
+    # ---------- Hook：剥离自身名片后缀，避免污染聊天上下文 ----------
+
+    @HookHandler(
+        "chat.receive.before_process",
+        name="strip_self_card_suffix",
+        description="把入站消息中 @Bot 自身的『前缀丨状态』后缀剥掉，避免 LLM 把状态当用户原话",
+        mode=HookMode.BLOCKING,
+        order=HookOrder.EARLY,
+        error_policy=ErrorPolicy.SKIP,
+    )
+    async def strip_self_card_suffix(self, **kwargs: Any) -> dict[str, Any]:
+        message = kwargs.get("message")
+        if not isinstance(message, dict):
+            return {"action": "continue"}
+
+        bot_qq = (self.config.bot.qq_account or "").strip()
+        if not bot_qq:
+            return {"action": "continue"}
+
+        base_name = (self.config.settings.bot_base_name or self.config.bot.nickname or "").strip()
+
+        changed = False
+
+        segments = message.get("raw_message")
+        if isinstance(segments, list):
+            for seg in segments:
+                if not isinstance(seg, dict) or seg.get("type") != "at":
+                    continue
+                seg_data = seg.get("data")
+                if not isinstance(seg_data, dict):
+                    continue
+                if str(seg_data.get("target_user_id", "")).strip() != bot_qq:
+                    continue
+                cardname = str(seg_data.get("target_user_cardname") or "")
+                stripped = self._strip_suffix(cardname, base_name)
+                if stripped != cardname:
+                    seg_data["target_user_cardname"] = stripped or None
+                    changed = True
+
+        for text_key in ("processed_plain_text", "plain_text", "raw_text"):
+            text_value = message.get(text_key)
+            if not isinstance(text_value, str) or not text_value:
+                continue
+            cleaned = self._strip_suffix_in_text(text_value, base_name, bot_qq)
+            if cleaned != text_value:
+                message[text_key] = cleaned
+                changed = True
+
+        if not changed:
+            return {"action": "continue"}
+
+        modified = dict(kwargs)
+        modified["message"] = message
+        return {"action": "continue", "modified_kwargs": modified}
+
+    @staticmethod
+    def _strip_suffix(cardname: str, base_name: str) -> str:
+        if not cardname:
+            return cardname
+        idx = cardname.find("丨")
+        if idx < 0:
+            return cardname
+        prefix = cardname[:idx].strip()
+        if base_name and prefix != base_name:
+            return cardname
+        return prefix or base_name
+
+    _AT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"@([^\s@丨]+)丨[^\s@]{1,16}",
+    )
+
+    def _strip_suffix_in_text(self, text: str, base_name: str, bot_qq: str) -> str:
+        del bot_qq
+
+        def _sub(match: re.Match[str]) -> str:
+            prefix = match.group(1)
+            if base_name and prefix != base_name:
+                return match.group(0)
+            return f"@{prefix}"
+
+        return self._AT_PATTERN.sub(_sub, text)
 
 
 def create_plugin() -> DynamicNicknamePlugin:
