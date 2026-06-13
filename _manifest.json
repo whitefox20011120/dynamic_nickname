@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "version": "2.1.0",
+  "version": "2.1.1",
   "name": "动态群名片",
   "description": "周期性自动更换群名片后缀",
   "author": {
@@ -38,5 +38,6 @@
       "zh-CN"
     ]
   },
-  "id": "whitefox.dynamic-nickname"
+  "id": "whitefox.dynamic-nickname",
+  "plugin_type": "automation"
 }
